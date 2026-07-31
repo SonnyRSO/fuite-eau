@@ -210,7 +210,7 @@ function Hero({ user, onChangeUser, view, currentResidence }) {
       <p className="hero__eyebrow">{view.screen === 'liste' ? 'Toutes les résidences' : 'Tournée compteurs'}</p>
       <h1>{titre}</h1>
       {view.screen === 'liste' && (
-        <p className="hero__sub">Adresses et suivi des passages, partagés entre vous 3.</p>
+        <p className="hero__sub">Adresses et suivi des passages, partagés entre nous 3.</p>
       )}
       <div className="hero__user">
         {user} · <button onClick={onChangeUser}>changer</button>
