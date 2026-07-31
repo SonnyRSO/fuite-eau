@@ -5,5 +5,5 @@ import react from '@vitejs/plugin-react'
 // si tu déploies sur GitHub Pages (https://<user>.github.io/<repo>/)
 export default defineConfig({
   plugins: [react()],
-  base: '/releves-eau/',
+  base: '/fuite-eau/',
 })
