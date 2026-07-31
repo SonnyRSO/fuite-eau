@@ -220,7 +220,17 @@ function Hero({ user, onChangeUser, view, currentResidence }) {
 }
 
 // ---------- Liste des résidences, groupées par secteur ----------
+const SECTEUR_COLORS = {
+  1: '#0E3B36',
+  2: '#2BA9A1',
+  3: '#B3792B',
+  4: '#5B5A8C',
+  'sans-secteur': '#8A968F',
+}
+
 function ListeResidences({ residences, adresses, passages, onOpen, onEdit, onDelete }) {
+  const [ouverts, setOuverts] = useState({})
+
   if (residences === null) return <Chargement />
   if (residences.length === 0) {
     return (
@@ -236,41 +246,72 @@ function ListeResidences({ residences, adresses, passages, onOpen, onEdit, onDel
     residences: residences.filter((r) => (r.secteur || 'sans-secteur') === secteur),
   })).filter((g) => g.residences.length > 0)
 
+  const toggle = (secteur) => setOuverts((o) => ({ ...o, [secteur]: !o[secteur] }))
+
   return (
     <div>
-      {groupes.map((g) => (
-        <div key={g.secteur}>
-          <div className="section-label">
-            {g.secteur === 'sans-secteur' ? 'Sans secteur' : `Secteur ${g.secteur}`} ({g.residences.length})
-          </div>
-          {g.residences.map((r) => {
-            const adressesResidence = adresses?.filter((a) => a.residenceId === r.id) || []
-            const fuitesEnCours = passages?.filter(
-              (p) => adressesResidence.some((a) => a.id === p.adresseId) && p.fuiteSuspectee && !p.plombierEnvoye
-            ).length || 0
+      {groupes.map((g) => {
+        const couleur = SECTEUR_COLORS[g.secteur]
+        const estOuvert = !!ouverts[g.secteur]
+        const adressesGroupe = adresses?.filter((a) => g.residences.some((r) => r.id === a.residenceId)) || []
+        const fuitesGroupe = passages?.filter(
+          (p) => adressesGroupe.some((a) => a.id === p.adresseId) && p.fuiteSuspectee && !p.plombierEnvoye
+        ).length || 0
 
-            return (
-              <div key={r.id} className="card residence-card" onClick={() => onOpen(r.id)}>
-                <div>
-                  <p className="residence-card__name">{r.nom}</p>
-                  <p className="residence-card__meta">
-                    {adressesResidence.length} adresse{adressesResidence.length > 1 ? 's' : ''}
-                  </p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {fuitesEnCours > 0 ? (
-                    <span className="badge badge--danger">{fuitesEnCours} fuite{fuitesEnCours > 1 ? 's' : ''}</span>
-                  ) : (
-                    <span className="badge badge--ok">OK</span>
-                  )}
-                  <button className="icon-btn" onClick={(e) => { e.stopPropagation(); onEdit(r) }}>✎</button>
-                  <button className="icon-btn" onClick={(e) => { e.stopPropagation(); onDelete(r) }}>🗑</button>
-                </div>
+        return (
+          <div key={g.secteur} className="secteur-groupe">
+            <button
+              className="secteur-header"
+              style={{ '--secteur-color': couleur }}
+              onClick={() => toggle(g.secteur)}
+            >
+              <span className="secteur-header__dot" />
+              <span className="secteur-header__titre">
+                {g.secteur === 'sans-secteur' ? 'Sans secteur' : `Secteur ${g.secteur}`}
+              </span>
+              <span className="secteur-header__count">{g.residences.length}</span>
+              {fuitesGroupe > 0 && <span className="badge badge--danger">{fuitesGroupe}</span>}
+              <span className={`secteur-header__chevron ${estOuvert ? 'secteur-header__chevron--ouvert' : ''}`}>⌄</span>
+            </button>
+
+            {estOuvert && (
+              <div className="secteur-contenu">
+                {g.residences.map((r) => {
+                  const adressesResidence = adresses?.filter((a) => a.residenceId === r.id) || []
+                  const fuitesEnCours = passages?.filter(
+                    (p) => adressesResidence.some((a) => a.id === p.adresseId) && p.fuiteSuspectee && !p.plombierEnvoye
+                  ).length || 0
+
+                  return (
+                    <div
+                      key={r.id}
+                      className="card residence-card"
+                      style={{ borderLeft: `3px solid ${couleur}` }}
+                      onClick={() => onOpen(r.id)}
+                    >
+                      <div>
+                        <p className="residence-card__name">{r.nom}</p>
+                        <p className="residence-card__meta">
+                          {adressesResidence.length} adresse{adressesResidence.length > 1 ? 's' : ''}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {fuitesEnCours > 0 ? (
+                          <span className="badge badge--danger">{fuitesEnCours} fuite{fuitesEnCours > 1 ? 's' : ''}</span>
+                        ) : (
+                          <span className="badge badge--ok">OK</span>
+                        )}
+                        <button className="icon-btn" onClick={(e) => { e.stopPropagation(); onEdit(r) }}>✎</button>
+                        <button className="icon-btn" onClick={(e) => { e.stopPropagation(); onDelete(r) }}>🗑</button>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            )
-          })}
-        </div>
-      ))}
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -577,6 +618,7 @@ function ResidenceForm({ residence, onClose, onSaved }) {
                 key={s}
                 type="button"
                 className={`secteur-btn ${secteur === s ? 'secteur-btn--active' : ''}`}
+                style={secteur === s ? { background: SECTEUR_COLORS[s], borderColor: SECTEUR_COLORS[s] } : { borderColor: SECTEUR_COLORS[s], color: SECTEUR_COLORS[s] }}
                 onClick={() => setSecteur(s === secteur ? '' : s)}
               >
                 {s}
