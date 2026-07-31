@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react'
 import {
   collection, addDoc, onSnapshot, query, orderBy,
-  doc, updateDoc, serverTimestamp,
+  doc, updateDoc, deleteDoc, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from './firebase'
 
 const EQUIPE = ['Lucie', 'Noa', 'Sonny']
+const SECTEURS = [1, 2, 3, 4]
 
 // ---------- Hooks Firestore ----------
 function useCollection(name, order = 'createdAt') {
@@ -33,8 +34,8 @@ function useUser() {
 export default function App() {
   const [user, setUser] = useUser()
   const [view, setView] = useState({ screen: 'liste' }) // liste | residence | adresse | dashboard
-  const [showResidenceForm, setShowResidenceForm] = useState(false)
-  const [showAddressForm, setShowAddressForm] = useState(false)
+  const [residenceForm, setResidenceForm] = useState(null) // null | 'new' | résidence à éditer
+  const [addressForm, setAddressForm] = useState(null) // null | { residenceId } | adresse à éditer
   const [showPassageForm, setShowPassageForm] = useState(false)
 
   const residences = useCollection('residences')
@@ -82,6 +83,13 @@ export default function App() {
             adresses={adresses}
             passages={passages}
             onOpen={(id) => setView({ screen: 'residence', residenceId: id })}
+            onEdit={(r) => setResidenceForm(r)}
+            onDelete={async (r) => {
+              if (!confirm(`Supprimer la résidence "${r.nom}" et toutes ses adresses ?`)) return
+              const adressesASupprimer = adresses?.filter((a) => a.residenceId === r.id) || []
+              await Promise.all(adressesASupprimer.map((a) => deleteDoc(doc(db, 'adresses', a.id))))
+              await deleteDoc(doc(db, 'residences', r.id))
+            }}
           />
         )}
 
@@ -102,7 +110,12 @@ export default function App() {
             passages={passages}
             onBack={() => setView({ screen: 'liste' })}
             onOpenAdresse={(id) => setView({ screen: 'adresse', residenceId: currentResidence.id, adresseId: id })}
-            onAdd={() => setShowAddressForm(true)}
+            onAdd={() => setAddressForm({ residenceId: currentResidence.id })}
+            onEdit={(a) => setAddressForm(a)}
+            onDelete={async (a) => {
+              if (!confirm(`Supprimer l'adresse "${a.adresse}" ?`)) return
+              await deleteDoc(doc(db, 'adresses', a.id))
+            }}
           />
         )}
 
@@ -120,26 +133,28 @@ export default function App() {
 
       {view.screen === 'liste' && (
         <div className="fab">
-          <button className="btn-primary" onClick={() => setShowResidenceForm(true)}>
+          <button className="btn-primary" onClick={() => setResidenceForm('new')}>
             + Nouvelle résidence
           </button>
         </div>
       )}
 
-      {showResidenceForm && (
+      {residenceForm && (
         <ResidenceForm
-          onClose={() => setShowResidenceForm(false)}
+          residence={residenceForm === 'new' ? null : residenceForm}
+          onClose={() => setResidenceForm(null)}
           onSaved={(id) => {
-            setShowResidenceForm(false)
+            setResidenceForm(null)
             setView({ screen: 'residence', residenceId: id })
           }}
         />
       )}
 
-      {showAddressForm && currentResidence && (
+      {addressForm && (
         <AddressForm
-          residenceId={currentResidence.id}
-          onClose={() => setShowAddressForm(false)}
+          adresse={addressForm.id ? addressForm : null}
+          defaultResidenceId={addressForm.residenceId}
+          onClose={() => setAddressForm(null)}
         />
       )}
 
@@ -204,8 +219,8 @@ function Hero({ user, onChangeUser, view, currentResidence }) {
   )
 }
 
-// ---------- Liste des résidences ----------
-function ListeResidences({ residences, adresses, passages, onOpen }) {
+// ---------- Liste des résidences, groupées par secteur ----------
+function ListeResidences({ residences, adresses, passages, onOpen, onEdit, onDelete }) {
   if (residences === null) return <Chargement />
   if (residences.length === 0) {
     return (
@@ -216,31 +231,46 @@ function ListeResidences({ residences, adresses, passages, onOpen }) {
     )
   }
 
+  const groupes = [...SECTEURS, 'sans-secteur'].map((secteur) => ({
+    secteur,
+    residences: residences.filter((r) => (r.secteur || 'sans-secteur') === secteur),
+  })).filter((g) => g.residences.length > 0)
+
   return (
     <div>
-      <div className="section-label">Résidences ({residences.length})</div>
-      {residences.map((r) => {
-        const adressesResidence = adresses?.filter((a) => a.residenceId === r.id) || []
-        const fuitesEnCours = passages?.filter(
-          (p) => adressesResidence.some((a) => a.id === p.adresseId) && p.fuiteSuspectee && !p.plombierEnvoye
-        ).length || 0
-
-        return (
-          <div key={r.id} className="card residence-card" onClick={() => onOpen(r.id)}>
-            <div>
-              <p className="residence-card__name">{r.nom}</p>
-              <p className="residence-card__meta">
-                {adressesResidence.length} adresse{adressesResidence.length > 1 ? 's' : ''}
-              </p>
-            </div>
-            {fuitesEnCours > 0 ? (
-              <span className="badge badge--danger">{fuitesEnCours} fuite{fuitesEnCours > 1 ? 's' : ''}</span>
-            ) : (
-              <span className="badge badge--ok">OK</span>
-            )}
+      {groupes.map((g) => (
+        <div key={g.secteur}>
+          <div className="section-label">
+            {g.secteur === 'sans-secteur' ? 'Sans secteur' : `Secteur ${g.secteur}`} ({g.residences.length})
           </div>
-        )
-      })}
+          {g.residences.map((r) => {
+            const adressesResidence = adresses?.filter((a) => a.residenceId === r.id) || []
+            const fuitesEnCours = passages?.filter(
+              (p) => adressesResidence.some((a) => a.id === p.adresseId) && p.fuiteSuspectee && !p.plombierEnvoye
+            ).length || 0
+
+            return (
+              <div key={r.id} className="card residence-card" onClick={() => onOpen(r.id)}>
+                <div>
+                  <p className="residence-card__name">{r.nom}</p>
+                  <p className="residence-card__meta">
+                    {adressesResidence.length} adresse{adressesResidence.length > 1 ? 's' : ''}
+                  </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {fuitesEnCours > 0 ? (
+                    <span className="badge badge--danger">{fuitesEnCours} fuite{fuitesEnCours > 1 ? 's' : ''}</span>
+                  ) : (
+                    <span className="badge badge--ok">OK</span>
+                  )}
+                  <button className="icon-btn" onClick={(e) => { e.stopPropagation(); onEdit(r) }}>✎</button>
+                  <button className="icon-btn" onClick={(e) => { e.stopPropagation(); onDelete(r) }}>🗑</button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ))}
     </div>
   )
 }
@@ -290,6 +320,22 @@ function Dashboard({ user, residences, adresses, passages, onOpenAdresse }) {
           <p className="stat-card__num">{mesPassages}</p>
           <p className="stat-card__label">Mes passages ({user})</p>
         </div>
+      </div>
+
+      <div className="section-label">Avancement par secteur</div>
+      <div className="card">
+        {[...SECTEURS, 'sans-secteur'].map((secteur, i, arr) => {
+          const residencesSecteur = residences.filter((r) => (r.secteur || 'sans-secteur') === secteur)
+          if (residencesSecteur.length === 0) return null
+          const adressesSecteur = adresses.filter((a) => residencesSecteur.some((r) => r.id === a.residenceId))
+          const faites = adressesSecteur.filter((a) => passages.some((p) => p.adresseId === a.id))
+          return (
+            <div key={secteur} className="address-row" style={{ borderBottom: i === arr.length - 1 ? 'none' : undefined }}>
+              <p className="address-row__label">{secteur === 'sans-secteur' ? 'Sans secteur' : `Secteur ${secteur}`}</p>
+              <span className="badge badge--ok">{faites.length}/{adressesSecteur.length}</span>
+            </div>
+          )
+        })}
       </div>
 
       <div className="section-label">Par personne</div>
@@ -343,7 +389,7 @@ function Dashboard({ user, residences, adresses, passages, onOpenAdresse }) {
               >
                 <div>
                   <p className="address-row__label">{a.adresse}</p>
-                  <p className="address-row__meter">{res?.nom || ''}</p>
+                  <p className="address-row__meter">{res?.nom || ''}{res?.secteur ? ` · Secteur ${res.secteur}` : ''}</p>
                 </div>
                 <span className="badge badge--warn">À faire</span>
               </div>
@@ -379,7 +425,7 @@ function Dashboard({ user, residences, adresses, passages, onOpenAdresse }) {
 }
 
 // ---------- Liste des adresses d'une résidence ----------
-function ListeAdresses({ residence, adresses, passages, onBack, onOpenAdresse, onAdd }) {
+function ListeAdresses({ residence, adresses, passages, onBack, onOpenAdresse, onAdd, onEdit, onDelete }) {
   return (
     <div>
       <button className="back-link" onClick={onBack}>← Toutes les résidences</button>
@@ -396,20 +442,24 @@ function ListeAdresses({ residence, adresses, passages, onBack, onOpenAdresse, o
               ?.filter((p) => p.adresseId === a.id)
               ?.sort((x, y) => (y.date?.seconds || 0) - (x.date?.seconds || 0))[0]
             return (
-              <div key={a.id} className="address-row" onClick={() => onOpenAdresse(a.id)} style={{ cursor: 'pointer' }}>
-                <div>
+              <div key={a.id} className="address-row" style={{ cursor: 'pointer' }}>
+                <div onClick={() => onOpenAdresse(a.id)} style={{ flex: 1 }}>
                   <p className="address-row__label">{a.adresse}</p>
                   {a.notes && <p className="address-row__meter">{a.notes}</p>}
                 </div>
-                {dernierPassage?.fuiteSuspectee && !dernierPassage?.plombierEnvoye ? (
-                  <span className="badge badge--danger">Fuite</span>
-                ) : dernierPassage?.plombierEnvoye ? (
-                  <span className="badge badge--ok">Plombier ✓</span>
-                ) : dernierPassage ? (
-                  <span className="badge badge--ok">Fait ({dernierPassage.auteur})</span>
-                ) : (
-                  <span className="badge badge--warn">À faire</span>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {dernierPassage?.fuiteSuspectee && !dernierPassage?.plombierEnvoye ? (
+                    <span className="badge badge--danger">Fuite</span>
+                  ) : dernierPassage?.plombierEnvoye ? (
+                    <span className="badge badge--ok">Plombier ✓</span>
+                  ) : dernierPassage ? (
+                    <span className="badge badge--ok">Fait ({dernierPassage.auteur})</span>
+                  ) : (
+                    <span className="badge badge--warn">À faire</span>
+                  )}
+                  <button className="icon-btn" onClick={() => onEdit(a)}>✎</button>
+                  <button className="icon-btn" onClick={() => onDelete(a)}>🗑</button>
+                </div>
               </div>
             )
           })}
@@ -484,34 +534,60 @@ function DetailAdresse({ adresse, passages, onBack, onNouveauPassage, user }) {
   )
 }
 
-// ---------- Formulaire résidence ----------
-function ResidenceForm({ onClose, onSaved }) {
-  const [nom, setNom] = useState('')
+// ---------- Formulaire résidence (création ou édition) ----------
+function ResidenceForm({ residence, onClose, onSaved }) {
+  const [nom, setNom] = useState(residence?.nom || '')
+  const [secteur, setSecteur] = useState(residence?.secteur || '')
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
     if (!nom.trim()) return
     setSaving(true)
-    const docRef = await addDoc(collection(db, 'residences'), {
-      nom: nom.trim(),
-      createdAt: serverTimestamp(),
-    })
-    setSaving(false)
-    onSaved(docRef.id)
+    if (residence) {
+      await updateDoc(doc(db, 'residences', residence.id), {
+        nom: nom.trim(),
+        secteur: secteur || null,
+      })
+      setSaving(false)
+      onSaved(residence.id)
+    } else {
+      const docRef = await addDoc(collection(db, 'residences'), {
+        nom: nom.trim(),
+        secteur: secteur || null,
+        createdAt: serverTimestamp(),
+      })
+      setSaving(false)
+      onSaved(docRef.id)
+    }
   }
 
   return (
     <div className="overlay" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <h2>Nouvelle résidence</h2>
+        <h2>{residence ? 'Modifier la résidence' : 'Nouvelle résidence'}</h2>
         <div className="field">
           <label>Nom de la résidence</label>
           <input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="ex. Résidence Les Tilleuls" autoFocus />
         </div>
+        <div className="field">
+          <label>Secteur</label>
+          <div className="secteur-grid">
+            {SECTEURS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={`secteur-btn ${secteur === s ? 'secteur-btn--active' : ''}`}
+                onClick={() => setSecteur(s === secteur ? '' : s)}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="sheet-actions">
           <button className="btn-ghost" onClick={onClose}>Annuler</button>
           <button className="btn-primary" disabled={!nom.trim() || saving} onClick={submit}>
-            {saving ? 'Enregistrement...' : 'Créer'}
+            {saving ? 'Enregistrement...' : residence ? 'Enregistrer' : 'Créer'}
           </button>
         </div>
       </div>
@@ -519,21 +595,28 @@ function ResidenceForm({ onClose, onSaved }) {
   )
 }
 
-// ---------- Formulaire adresse ----------
-function AddressForm({ residenceId, onClose }) {
-  const [adresse, setAdresse] = useState('')
-  const [notes, setNotes] = useState('')
+// ---------- Formulaire adresse (création ou édition) ----------
+function AddressForm({ residenceId, adresse, defaultResidenceId, onClose }) {
+  const [texte, setTexte] = useState(adresse?.adresse || '')
+  const [notes, setNotes] = useState(adresse?.notes || '')
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
-    if (!adresse.trim()) return
+    if (!texte.trim()) return
     setSaving(true)
-    await addDoc(collection(db, 'adresses'), {
-      residenceId,
-      adresse: adresse.trim(),
-      notes: notes.trim(),
-      createdAt: serverTimestamp(),
-    })
+    if (adresse) {
+      await updateDoc(doc(db, 'adresses', adresse.id), {
+        adresse: texte.trim(),
+        notes: notes.trim(),
+      })
+    } else {
+      await addDoc(collection(db, 'adresses'), {
+        residenceId: defaultResidenceId,
+        adresse: texte.trim(),
+        notes: notes.trim(),
+        createdAt: serverTimestamp(),
+      })
+    }
     setSaving(false)
     onClose()
   }
@@ -541,10 +624,10 @@ function AddressForm({ residenceId, onClose }) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <h2>Nouvelle adresse</h2>
+        <h2>{adresse ? 'Modifier l\'adresse' : 'Nouvelle adresse'}</h2>
         <div className="field">
           <label>Adresse complète</label>
-          <input value={adresse} onChange={(e) => setAdresse(e.target.value)} placeholder="ex. 12 rue des Tilleuls, Bât B, Apt 4" autoFocus />
+          <input value={texte} onChange={(e) => setTexte(e.target.value)} placeholder="ex. 12 rue des Tilleuls, Bât B, Apt 4" autoFocus />
         </div>
         <div className="field">
           <label>Notes (accès, digicode...)</label>
@@ -552,8 +635,8 @@ function AddressForm({ residenceId, onClose }) {
         </div>
         <div className="sheet-actions">
           <button className="btn-ghost" onClick={onClose}>Annuler</button>
-          <button className="btn-primary" disabled={!adresse.trim() || saving} onClick={submit}>
-            {saving ? 'Enregistrement...' : 'Ajouter'}
+          <button className="btn-primary" disabled={!texte.trim() || saving} onClick={submit}>
+            {saving ? 'Enregistrement...' : adresse ? 'Enregistrer' : 'Ajouter'}
           </button>
         </div>
       </div>
