@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Accès ouvert en lecture/écriture : convient pour un usage privé à 3 personnes
+    // qui connaissent seulement l'URL de l'appli. Aucune photo ni donnée sensible
+    // n'est stockée : seulement des adresses et des passages (date, auteur, fuite oui/non).
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
