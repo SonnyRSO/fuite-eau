@@ -220,6 +220,60 @@ button {
   color: white;
 }
 
+.secteur-groupe {
+  margin-bottom: 10px;
+}
+
+.secteur-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: color-mix(in srgb, var(--secteur-color) 10%, var(--paper-raised));
+  border: 1px solid color-mix(in srgb, var(--secteur-color) 35%, var(--line));
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+
+.secteur-header__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--secteur-color);
+  flex-shrink: 0;
+}
+
+.secteur-header__titre {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14.5px;
+  color: var(--ink);
+}
+
+.secteur-header__count {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.secteur-header__chevron {
+  margin-left: auto;
+  font-size: 18px;
+  color: var(--secteur-color);
+  transition: transform 0.15s ease;
+  line-height: 1;
+}
+.secteur-header__chevron--ouvert {
+  transform: rotate(180deg);
+}
+
+.secteur-contenu {
+  padding-top: 8px;
+}
+
 /* ---------- Content ---------- */
 .content {
   padding: 18px 16px 0;
