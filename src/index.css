@@ -274,6 +274,43 @@ button {
   padding-top: 8px;
 }
 
+.validation-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-left: 3px solid var(--amber);
+}
+.validation-card--ok {
+  border-left: 3px solid var(--teal);
+}
+
+.oui-non-grid {
+  display: flex;
+  gap: 8px;
+}
+.oui-non-btn {
+  flex: 1;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+}
+.oui-non-btn--active-ok {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: white;
+}
+.oui-non-btn--active-danger {
+  background: var(--rust);
+  border-color: var(--rust);
+  color: white;
+}
+
 /* ---------- Content ---------- */
 .content {
   padding: 18px 16px 0;
