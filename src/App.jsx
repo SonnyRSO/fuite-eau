@@ -108,6 +108,7 @@ export default function App() {
             residence={currentResidence}
             adresses={adresses?.filter((a) => a.residenceId === currentResidence.id)}
             passages={passages}
+            user={user}
             onBack={() => setView({ screen: 'liste' })}
             onOpenAdresse={(id) => setView({ screen: 'adresse', residenceId: currentResidence.id, adresseId: id })}
             onAdd={() => setAddressForm({ residenceId: currentResidence.id })}
@@ -210,7 +211,7 @@ function Hero({ user, onChangeUser, view, currentResidence }) {
       <p className="hero__eyebrow">{view.screen === 'liste' ? 'Toutes les résidences' : 'Tournée compteurs'}</p>
       <h1>{titre}</h1>
       {view.screen === 'liste' && (
-        <p className="hero__sub">Adresses et suivi des passages, partagés entre nous 3.</p>
+        <p className="hero__sub">Adresses et suivi des passages, partagés entre vous 3.</p>
       )}
       <div className="hero__user">
         {user} · <button onClick={onChangeUser}>changer</button>
@@ -255,7 +256,7 @@ function ListeResidences({ residences, adresses, passages, onOpen, onEdit, onDel
         const estOuvert = !!ouverts[g.secteur]
         const adressesGroupe = adresses?.filter((a) => g.residences.some((r) => r.id === a.residenceId)) || []
         const fuitesGroupe = passages?.filter(
-          (p) => adressesGroupe.some((a) => a.id === p.adresseId) && p.fuiteSuspectee && !p.plombierEnvoye
+          (p) => adressesGroupe.some((a) => a.id === p.adresseId) && p.fuiteConstatee && !p.plombierEnvoye
         ).length || 0
 
         return (
@@ -279,7 +280,7 @@ function ListeResidences({ residences, adresses, passages, onOpen, onEdit, onDel
                 {g.residences.map((r) => {
                   const adressesResidence = adresses?.filter((a) => a.residenceId === r.id) || []
                   const fuitesEnCours = passages?.filter(
-                    (p) => adressesResidence.some((a) => a.id === p.adresseId) && p.fuiteSuspectee && !p.plombierEnvoye
+                    (p) => adressesResidence.some((a) => a.id === p.adresseId) && p.fuiteConstatee && !p.plombierEnvoye
                   ).length || 0
 
                   return (
@@ -298,8 +299,10 @@ function ListeResidences({ residences, adresses, passages, onOpen, onEdit, onDel
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         {fuitesEnCours > 0 ? (
                           <span className="badge badge--danger">{fuitesEnCours} fuite{fuitesEnCours > 1 ? 's' : ''}</span>
+                        ) : r.terminee ? (
+                          <span className="badge badge--ok">Validée</span>
                         ) : (
-                          <span className="badge badge--ok">OK</span>
+                          <span className="badge badge--warn">En cours</span>
                         )}
                         <button className="icon-btn" onClick={(e) => { e.stopPropagation(); onEdit(r) }}>✎</button>
                         <button className="icon-btn" onClick={(e) => { e.stopPropagation(); onDelete(r) }}>🗑</button>
@@ -323,7 +326,7 @@ function Dashboard({ user, residences, adresses, passages, onOpenAdresse }) {
   const totalAdresses = adresses.length
   const adressesFaites = adresses.filter((a) => passages.some((p) => p.adresseId === a.id))
   const adressesRestantes = adresses.filter((a) => !passages.some((p) => p.adresseId === a.id))
-  const fuitesEnAttente = passages.filter((p) => p.fuiteSuspectee && !p.plombierEnvoye)
+  const fuitesEnAttente = passages.filter((p) => p.fuiteConstatee && !p.plombierEnvoye)
 
   const parPersonne = EQUIPE.map((nom) => ({
     nom,
@@ -455,7 +458,7 @@ function Dashboard({ user, residences, adresses, passages, onOpenAdresse }) {
                   </p>
                   <p className="address-row__label" style={{ fontWeight: 400 }}>{info.texte}</p>
                 </div>
-                {p.fuiteSuspectee && <span className="badge badge--danger">Fuite</span>}
+                {p.fuiteConstatee && <span className="badge badge--danger">Fuite</span>}
               </div>
             )
           })}
@@ -466,10 +469,36 @@ function Dashboard({ user, residences, adresses, passages, onOpenAdresse }) {
 }
 
 // ---------- Liste des adresses d'une résidence ----------
-function ListeAdresses({ residence, adresses, passages, onBack, onOpenAdresse, onAdd, onEdit, onDelete }) {
+function ListeAdresses({ residence, adresses, passages, onBack, onOpenAdresse, onAdd, onEdit, onDelete, user }) {
+  const toggleValidation = async () => {
+    if (residence.terminee) {
+      await updateDoc(doc(db, 'residences', residence.id), {
+        terminee: false, termineePar: null, termineeLe: null,
+      })
+    } else {
+      await updateDoc(doc(db, 'residences', residence.id), {
+        terminee: true, termineePar: user, termineeLe: serverTimestamp(),
+      })
+    }
+  }
+
   return (
     <div>
       <button className="back-link" onClick={onBack}>← Toutes les résidences</button>
+
+      <div className={`card validation-card ${residence.terminee ? 'validation-card--ok' : ''}`}>
+        <div>
+          <p className="residence-card__name" style={{ marginBottom: 2 }}>
+            {residence.terminee ? 'Résidence terminée ✓' : 'Résidence en cours'}
+          </p>
+          <p className="residence-card__meta">
+            {residence.terminee ? `Validée par ${residence.termineePar}` : "Pas encore marquée comme faite"}
+          </p>
+        </div>
+        <button className={residence.terminee ? 'btn-ghost' : 'btn-primary'} style={{ width: 'auto', padding: '10px 14px' }} onClick={toggleValidation}>
+          {residence.terminee ? 'Annuler' : 'Valider'}
+        </button>
+      </div>
 
       <div className="section-label">Adresses</div>
       {adresses === undefined || adresses === null ? (
@@ -489,10 +518,12 @@ function ListeAdresses({ residence, adresses, passages, onBack, onOpenAdresse, o
                   {a.notes && <p className="address-row__meter">{a.notes}</p>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {dernierPassage?.fuiteSuspectee && !dernierPassage?.plombierEnvoye ? (
+                  {dernierPassage?.fuiteConstatee && !dernierPassage?.plombierEnvoye ? (
                     <span className="badge badge--danger">Fuite</span>
                   ) : dernierPassage?.plombierEnvoye ? (
                     <span className="badge badge--ok">Plombier ✓</span>
+                  ) : dernierPassage?.compteurTrouve === false ? (
+                    <span className="badge badge--warn">Compteur introuvable</span>
                   ) : dernierPassage ? (
                     <span className="badge badge--ok">Fait ({dernierPassage.auteur})</span>
                   ) : (
@@ -553,14 +584,14 @@ function DetailAdresse({ adresse, passages, onBack, onNouveauPassage, user }) {
                   </p>
                   {p.commentaire && <p className="releve-item__comment" style={{ margin: '0 0 6px' }}>{p.commentaire}</p>}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {p.fuiteSuspectee && (
+                    {p.fuiteConstatee && (
                       <span className="badge badge--danger">Fuite suspectée</span>
                     )}
                     {p.plombierEnvoye ? (
                       <span className="badge badge--ok">
                         Plombier passé{p.plombierPar ? ` (${p.plombierPar})` : ''}
                       </span>
-                    ) : p.fuiteSuspectee ? (
+                    ) : p.fuiteConstatee ? (
                       <button className="icon-btn" onClick={() => marquerPlombier(p.id)}>
                         Marquer plombier passé
                       </button>
@@ -688,15 +719,18 @@ function AddressForm({ residenceId, adresse, defaultResidenceId, onClose }) {
 
 // ---------- Formulaire nouveau passage (sans photo ni numéro) ----------
 function PassageForm({ adresseId, user, onClose }) {
-  const [fuiteSuspectee, setFuiteSuspectee] = useState(false)
+  const [compteurTrouve, setCompteurTrouve] = useState(null) // true | false | null
+  const [fuiteConstatee, setFuiteConstatee] = useState(null) // true | false | null
   const [commentaire, setCommentaire] = useState('')
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
+    if (compteurTrouve === null || fuiteConstatee === null) return
     setSaving(true)
     await addDoc(collection(db, 'passages'), {
       adresseId,
-      fuiteSuspectee,
+      compteurTrouve,
+      fuiteConstatee,
       plombierEnvoye: false,
       commentaire: commentaire.trim(),
       auteur: user,
@@ -714,9 +748,20 @@ function PassageForm({ adresseId, user, onClose }) {
           Aucune photo ni numéro de compteur n'est enregistré ici, par sécurité. Garde tes photos sur ton téléphone.
         </p>
 
-        <div className="toggle-row">
-          <span>Fuite suspectée ?</span>
-          <input type="checkbox" checked={fuiteSuspectee} onChange={(e) => setFuiteSuspectee(e.target.checked)} />
+        <div className="field">
+          <label>Compteur trouvé ?</label>
+          <div className="oui-non-grid">
+            <button type="button" className={`oui-non-btn ${compteurTrouve === true ? 'oui-non-btn--active-ok' : ''}`} onClick={() => setCompteurTrouve(true)}>Oui</button>
+            <button type="button" className={`oui-non-btn ${compteurTrouve === false ? 'oui-non-btn--active-danger' : ''}`} onClick={() => setCompteurTrouve(false)}>Non</button>
+          </div>
+        </div>
+
+        <div className="field">
+          <label>Fuite constatée ?</label>
+          <div className="oui-non-grid">
+            <button type="button" className={`oui-non-btn ${fuiteConstatee === true ? 'oui-non-btn--active-danger' : ''}`} onClick={() => setFuiteConstatee(true)}>Oui</button>
+            <button type="button" className={`oui-non-btn ${fuiteConstatee === false ? 'oui-non-btn--active-ok' : ''}`} onClick={() => setFuiteConstatee(false)}>Non</button>
+          </div>
         </div>
 
         <div className="field">
@@ -726,7 +771,7 @@ function PassageForm({ adresseId, user, onClose }) {
 
         <div className="sheet-actions">
           <button className="btn-ghost" onClick={onClose}>Annuler</button>
-          <button className="btn-primary" disabled={saving} onClick={submit}>
+          <button className="btn-primary" disabled={saving || compteurTrouve === null || fuiteConstatee === null} onClick={submit}>
             {saving ? 'Envoi...' : 'Enregistrer le passage'}
           </button>
         </div>
